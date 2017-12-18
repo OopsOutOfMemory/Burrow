@@ -10,3 +10,4 @@ Burrow.exe
 Burrow.iml
 tmp
 vendor
+Gopkg.lock

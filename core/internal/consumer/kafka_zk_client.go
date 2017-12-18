@@ -22,6 +22,8 @@ import (
 
 	"github.com/linkedin/Burrow/core/internal/helpers"
 	"github.com/linkedin/Burrow/core/protocol"
+	"encoding/json"
+	"confd/log"
 )
 
 type topicList struct {
@@ -31,6 +33,13 @@ type topicList struct {
 type partitionCount struct {
 	count int32
 	lock  *sync.Mutex
+}
+
+//change by shengli
+type Transform struct {
+	Topic string `json:"topic"`
+	PartitionId int32 `json:"partitionId"`
+	Offset int64 `json:"offset"`
 }
 
 // KafkaZkClient is a consumer module which connects to the Zookeeper ensemble where an Apache Kafka cluster maintains
@@ -248,17 +257,28 @@ func (module *KafkaZkClient) watchTopicList(group string, eventChan <-chan zk.Ev
 
 func (module *KafkaZkClient) resetTopicListWatchAndAdd(group string, resetOnly bool) {
 	defer module.running.Done()
-
-	// Get the current group topic list and reset our watch
-	groupTopics, _, topicListEventChan, err := module.zk.ChildrenW(module.zookeeperPath + "/" + group + "/offsets")
-	if err != nil {
-		// Can't read the offsets path. usually this just means that this isn't an active ZK consumer
-		module.Log.Debug("failed to read topic list",
+	// changed by shengli |Get the current group topic list and reset our watch|
+	groupData, _, topicListEventChan, dataErr := module.zk.GetW(module.zookeeperPath + "/" + group + "/" + "0" )
+	if dataErr != nil {
+		module.Log.Debug("failed to get topic ",
 			zap.String("group", group),
-			zap.String("error", err.Error()),
+			zap.String("error", dataErr.Error()),
 		)
 		return
 	}
+	var transformConsumer Transform
+	mErr := json.Unmarshal(groupData, &transformConsumer)
+	if mErr != nil {
+		module.Log.Debug("failed to marshal json of transform ",
+			zap.String("group", group),
+			zap.String("error", dataErr.Error()),
+		)
+		return
+	}
+	// Get the current group topic list and reset our watch (transform group -> topic 1vs1)
+	groupTopics := [1]string{transformConsumer.Topic}
+
+	// End changed by shengli |Get the current group topic list and reset our watch|
 	module.running.Add(1)
 	go module.watchTopicList(group, topicListEventChan)
 
@@ -297,9 +317,9 @@ func (module *KafkaZkClient) watchPartitionList(group string, topic string, even
 
 func (module *KafkaZkClient) resetPartitionListWatchAndAdd(group string, topic string, resetOnly bool) {
 	defer module.running.Done()
-
+	// changed by shengli
 	// Get the current topic partition list and reset our watch
-	topicPartitions, _, partitionListEventChan, err := module.zk.ChildrenW(module.zookeeperPath + "/" + group + "/offsets/" + topic)
+	topicPartitions, _, partitionListEventChan, err := module.zk.ChildrenW(module.zookeeperPath + "/" + group )
 	if err != nil {
 		// Can't read the consumers path. Bail for now
 		module.Log.Warn("failed to read partitions",
@@ -347,7 +367,7 @@ func (module *KafkaZkClient) resetOffsetWatchAndSend(group string, topic string,
 	defer module.running.Done()
 
 	// Get the current offset and reset our watch
-	offsetString, offsetStat, offsetEventChan, err := module.zk.GetW(module.zookeeperPath + "/" + group + "/offsets/" + topic + "/" + strconv.FormatInt(int64(partition), 10))
+	offsetString, offsetStat, offsetEventChan, err := module.zk.GetW(module.zookeeperPath + "/" + group + "/" + strconv.FormatInt(int64(partition), 10))
 	if err != nil {
 		// Can't read the partition ofset path. Bail for now
 		module.Log.Warn("failed to read offset",
@@ -358,22 +378,30 @@ func (module *KafkaZkClient) resetOffsetWatchAndSend(group string, topic string,
 		)
 		return
 	}
+	var transformConsumer = Transform{}
+	formatErr := json.Unmarshal(offsetString, &transformConsumer)
+	if formatErr != nil {
+		module.Log.Debug("failed to marshal offset json of transform ",
+			zap.String("group", string(group)),
+			zap.String("error", formatErr.Error()),
+		)
+		// Badly formatted offset
+		module.Log.Error("badly formatted offset",
+			zap.String("group", group),
+			zap.String("topic", topic),
+			zap.Int32("partition", partition),
+			zap.ByteString("offset_string", offsetString),
+			zap.String("error", err.Error()),
+		)
+		return
+	}
+
+
 	module.running.Add(1)
 	go module.watchOffset(group, topic, partition, offsetEventChan)
 
 	if !resetOnly {
-		offset, err := strconv.ParseInt(string(offsetString), 10, 64)
-		if err != nil {
-			// Badly formatted offset
-			module.Log.Error("badly formatted offset",
-				zap.String("group", group),
-				zap.String("topic", topic),
-				zap.Int32("partition", partition),
-				zap.ByteString("offset_string", offsetString),
-				zap.String("error", err.Error()),
-			)
-			return
-		}
+		offset := transformConsumer.Offset
 
 		// Send the offset to the storage module
 		partitionOffset := &protocol.StorageRequest{
