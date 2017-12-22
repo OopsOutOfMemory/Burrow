@@ -98,6 +98,7 @@ func (module *HTTPNotifier) Configure(name string, configRoot string) {
 
 // Start is a no-op for the http notifier. It always returns no error
 func (module *HTTPNotifier) Start() error {
+	module.Log.Info("http notifier started")
 	return nil
 }
 
@@ -163,6 +164,7 @@ func (module *HTTPNotifier) Notify(status *protocol.ConsumerGroupStatus, eventID
 	}
 
 	// Send request to HTTP endpoint
+	module.Log.Info("bytesToSend slack is", zap.String("body", bytesToSend.String()))
 	req, err := http.NewRequest(method, url, bytesToSend)
 	if err != nil {
 		logger.Error("failed to create request", zap.Error(err))

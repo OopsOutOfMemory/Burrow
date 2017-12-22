@@ -222,6 +222,9 @@ func (module *CachingEvaluator) evaluateConsumerStatus(clusterAndConsumer string
 	for topic, partitions := range topics {
 		for partitionID, partition := range partitions {
 			partitionStatus := evaluatePartitionStatus(partition)
+			module.Log.Debug("evaluation partition status",
+				zap.String("topic", topic), zap.Int("partition",partitionID),
+					zap.String("consumer", consumer), zap.String("status", status.Status.String()))
 			partitionStatus.Topic = topic
 			partitionStatus.Partition = int32(partitionID)
 			partitionStatus.Owner = partition.Owner

@@ -23,7 +23,6 @@ import (
 	"github.com/linkedin/Burrow/core/internal/helpers"
 	"github.com/linkedin/Burrow/core/protocol"
 	"encoding/json"
-	"confd/log"
 )
 
 type topicList struct {

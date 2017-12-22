@@ -409,6 +409,7 @@ func (nc *Coordinator) responseLoop() {
 }
 
 func (nc *Coordinator) checkAndSendResponseToModules(response *protocol.ConsumerGroupStatus) {
+	nc.Log.Info("evaluate response", zap.String("response group", string(response.Group)), zap.String("response status",response.Status.String()))
 	defer nc.running.Done()
 
 	nc.clusterLock.RLock()
@@ -419,6 +420,7 @@ func (nc *Coordinator) checkAndSendResponseToModules(response *protocol.Consumer
 	defer cluster.Lock.RUnlock()
 	cgroup, ok := cluster.Groups[response.Group]
 	if !ok {
+		nc.Log.Info("The group must have just been deleted", zap.String("group", response.Group))
 		// The group must have just been deleted
 		return
 	}
@@ -431,6 +433,7 @@ func (nc *Coordinator) checkAndSendResponseToModules(response *protocol.Consumer
 
 	for _, genericModule := range nc.modules {
 		module := genericModule.(Module)
+		nc.Log.Info("[module]", zap.String("module", module.GetName()))
 
 		// No whitelist means everything passes
 		groupWhitelist := module.GetGroupWhitelist()
@@ -442,6 +445,7 @@ func (nc *Coordinator) checkAndSendResponseToModules(response *protocol.Consumer
 			continue
 		}
 		if module.AcceptConsumerGroup(response) {
+			nc.Log.Info("[AcceptConsumerGroup]", zap.String("response", response.Group))
 			nc.running.Add(1)
 			nc.notifyModuleFunc(module, response, cgroup.Start, cgroup.ID)
 		}
@@ -527,10 +531,10 @@ func (nc *Coordinator) processConsumerList(cluster string, replyChan chan interf
 
 func (nc *Coordinator) notifyModule(module Module, status *protocol.ConsumerGroupStatus, startTime time.Time, eventID string) {
 	defer nc.running.Done()
-
 	// Note - it is assumed that a read lock is already held when calling notifyModule
 	cgroup, ok := nc.clusters[status.Cluster].Groups[status.Group]
 	if !ok {
+		nc.Log.Info("notify Module", zap.String("group not ok",status.Group))
 		// The group must have just been deleted
 		return
 	}
@@ -538,6 +542,7 @@ func (nc *Coordinator) notifyModule(module Module, status *protocol.ConsumerGrou
 	// Closed incidents get sent regardless of the threshold for the module
 	moduleName := module.GetName()
 	if (!startTime.IsZero()) && (status.Status == protocol.StatusOK) && viper.GetBool("notifier."+moduleName+".send-close") {
+		nc.Log.Info("Closed incidents get sent regardless of the threshold for the module", zap.String("group",status.Group))
 		module.Notify(status, eventID, startTime, true)
 		cgroup.LastNotify[module.GetName()] = time.Time{}
 		return
@@ -545,12 +550,14 @@ func (nc *Coordinator) notifyModule(module Module, status *protocol.ConsumerGrou
 
 	// Only send a notification if the current status is above the module's threshold
 	if int(status.Status) < viper.GetInt("notifier."+module.GetName()+".threshold") {
+		nc.Log.Info("Only send a notification if the current status is above the module's threshold", zap.String("group",status.Group))
 		return
 	}
 
 	// Only send the notification if it's been at least our Interval since the last one for this group
 	currentTime := time.Now()
 	if currentTime.Sub(cgroup.LastNotify[module.GetName()]) > (time.Duration(viper.GetInt("notifier."+moduleName+".interval")) * time.Second) {
+		nc.Log.Info("Only send the notification if it's been at least our Interval since the last one for this group", zap.String("group",status.Group))
 		module.Notify(status, eventID, startTime, false)
 		cgroup.LastNotify[module.GetName()] = currentTime
 	}

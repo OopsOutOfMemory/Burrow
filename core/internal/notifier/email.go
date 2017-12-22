@@ -96,6 +96,7 @@ func (module *EmailNotifier) Configure(name string, configRoot string) {
 
 // Start is a no-op for the email notifier. It always returns no error
 func (module *EmailNotifier) Start() error {
+	module.Log.Info("email server started")
 	return nil
 }
 
@@ -133,6 +134,7 @@ func (module *EmailNotifier) AcceptConsumerGroup(status *protocol.ConsumerGroupS
 // status, eventID, and startTime are all passed to the template for compiling the message. If stateGood is true, the
 // "close" template is used. Otherwise, the "open" template is used.
 func (module *EmailNotifier) Notify(status *protocol.ConsumerGroupStatus, eventID string, startTime time.Time, stateGood bool) {
+	module.Log.Info("email notify", zap.String("group",status.Group))
 	logger := module.Log.With(
 		zap.String("cluster", status.Cluster),
 		zap.String("group", status.Group),
