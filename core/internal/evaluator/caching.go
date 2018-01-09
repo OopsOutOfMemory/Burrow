@@ -20,6 +20,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/linkedin/Burrow/core/protocol"
+	"github.com/linkedin/Burrow/core/internal/helpers"
 )
 
 // CachingEvaluator is an evaluator module that responds to evaluation requests and checks consumer status using the
@@ -39,6 +40,7 @@ type CachingEvaluator struct {
 	RequestChannel chan *protocol.EvaluatorRequest
 	running        sync.WaitGroup
 	cache          *goswarm.Simple
+	tsdbSender	*helpers.TSDBSender
 }
 
 type cacheError struct {
@@ -54,8 +56,15 @@ func (e *cacheError) Error() string {
 // cache. If no expiration time for cache entries is set, a default value of 10 seconds is used. If there is any problem
 // starting the goswarm cache, this func panics.
 func (module *CachingEvaluator) Configure(name string, configRoot string) {
-	module.Log.Info("configuring")
-
+	module.Log.Info("configuring name " + name + " root" + configRoot)
+	module.Log.Info("configuring tsdb sender")
+	tsdbSender :=  &helpers.TSDBSender{
+		AppContext: module.App,
+		Log: module.Log,
+	}
+	tsdbSender.Config(configRoot)
+	module.tsdbSender = tsdbSender
+	module.Log.Info("configuring tsdb sender done")
 	module.name = name
 	module.RequestChannel = make(chan *protocol.EvaluatorRequest)
 	module.running = sync.WaitGroup{}
@@ -260,6 +269,7 @@ func (module *CachingEvaluator) evaluateConsumerStatus(clusterAndConsumer string
 		zap.Uint64("total_lag", status.TotalLag),
 		zap.Int("total_partitions", status.TotalPartitions),
 	)
+	go module.tsdbSender.SendTransformLags([]*protocol.ConsumerGroupStatus{status})
 	return status, nil
 }
 

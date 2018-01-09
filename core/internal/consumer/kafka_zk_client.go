@@ -270,7 +270,7 @@ func (module *KafkaZkClient) resetTopicListWatchAndAdd(group string, resetOnly b
 	if mErr != nil {
 		module.Log.Debug("failed to marshal json of transform ",
 			zap.String("group", group),
-			zap.String("error", dataErr.Error()),
+			zap.String("error", mErr.Error()),
 		)
 		return
 	}
